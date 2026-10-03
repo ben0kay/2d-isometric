@@ -10,12 +10,12 @@ public partial class SandboxTerrain : Node3D
 	[Export] public float MiningInterval = 0.25f;
 	[Export] public float MiningReach = 5.0f;
 
-	private const int ChunkSize = 8;
-	private const int SizeX = 48;
-	private const int SizeY = 40;
-	private const int SizeZ = 48;
+	private const int ChunkSize = 16;
+	private const int SizeX = 128;
+	private const int SizeY = 64;
+	private const int SizeZ = 128;
 
-	private readonly Vector3 _origin = new(-24, -28, -24);
+	private readonly Vector3 _origin = new(-64, -48, -64);
 	private readonly float[,,] _density =
 		new float[SizeX + 1, SizeY + 1, SizeZ + 1];
 
@@ -27,10 +27,11 @@ public partial class SandboxTerrain : Node3D
 	private StandardMaterial3D _material;
 	private float _miningTimer;
 
-	private sealed class TerrainChunk
+		private sealed class TerrainChunk
 	{
 		public MeshInstance3D Visual;
 		public CollisionShape3D Collision;
+		public bool Built;
 	}
 
 	private static readonly Vector3I[] Corners =
@@ -51,6 +52,152 @@ public partial class SandboxTerrain : Node3D
 		{ 0, 7, 4, 6 },
 		{ 0, 4, 5, 6 }
 	};
+	
+		#region Chunk Streaming
+
+	private readonly Dictionary<Vector2I, Node3D> _columns = new();
+	private Node3D _chunkRoot;
+
+	public int Revision { get; private set; }
+	public int LoadedColumnCount => _columns.Count;
+	public int PendingSections => _queued.Count;
+	public IEnumerable<Vector2I> LoadedColumns => _columns.Keys;
+
+	// =========================================================
+	// Convert a global position into a horizontal chunk coordinate.
+	public Vector2I GetColumn(Vector3 globalPosition)
+	{
+		Vector3 local = ToLocal(globalPosition) - _origin;
+		return new Vector2I(
+			Mathf.FloorToInt(local.X / ChunkSize),
+			Mathf.FloorToInt(local.Z / ChunkSize));
+	}
+
+	// =========================================================
+	// Check whether a column lies inside the finite test world.
+	public bool IsValidColumn(Vector2I key)
+	{
+		return key.X >= 0 && key.X < SizeX / ChunkSize
+			&& key.Y >= 0 && key.Y < SizeZ / ChunkSize;
+	}
+
+	// =========================================================
+	// Create a tall chunk containing four independently rebuilt sections.
+	public void LoadColumn(Vector2I key)
+	{
+		if (!IsValidColumn(key) || _columns.ContainsKey(key)) return;
+
+		var column = new Node3D
+		{
+			Name = $"Chunk_{key.X}_{key.Y}"
+		};
+		_chunkRoot.AddChild(column);
+		_columns.Add(key, column);
+
+		// Surface sections first, then deeper sections.
+		for (int y = SizeY / ChunkSize - 1; y >= 0; y--)
+		{
+			var sectionKey = new Vector3I(key.X, y, key.Y);
+			var section = new Node3D { Name = $"Section_{y}" };
+			column.AddChild(section);
+
+			var visual = new MeshInstance3D
+			{
+				Name = "Visual",
+				MaterialOverride = _material
+			};
+			section.AddChild(visual);
+
+			var body = new StaticBody3D
+			{
+				Name = "Body",
+				CollisionLayer = 1,
+				CollisionMask = 0
+			};
+			section.AddChild(body);
+			body.AddToGroup("mineable_terrain");
+
+			var collision = new CollisionShape3D { Name = "Collision" };
+			body.AddChild(collision);
+
+			_chunks.Add(sectionKey, new TerrainChunk
+			{
+				Visual = visual,
+				Collision = collision
+			});
+
+			QueueSection(sectionKey);
+		}
+	}
+
+	// =========================================================
+	// Remove visual and collision nodes while retaining terrain edits.
+	public void UnloadColumn(Vector2I key)
+	{
+		if (!_columns.Remove(key, out Node3D column)) return;
+
+		for (int y = 0; y < SizeY / ChunkSize; y++)
+		{
+			var sectionKey = new Vector3I(key.X, y, key.Y);
+			_chunks.Remove(sectionKey);
+			_queued.Remove(sectionKey);
+		}
+
+		_chunkRoot.RemoveChild(column);
+		column.QueueFree();
+		Revision++;
+	}
+
+	// =========================================================
+	// Queue a section once, whether loading it or rebuilding after mining.
+	private void QueueSection(Vector3I key)
+	{
+		if (_queued.Add(key)) _dirty.Enqueue(key);
+	}
+
+	// =========================================================
+	// Check sections around a body's feet and head, including chunk seams.
+	public bool HasTerrainNear(Vector3 globalPosition)
+	{
+		Vector3 local = ToLocal(globalPosition) - _origin;
+
+		int minX = Mathf.FloorToInt((local.X - 0.5f) / ChunkSize);
+		int maxX = Mathf.FloorToInt((local.X + 0.5f) / ChunkSize);
+		int minZ = Mathf.FloorToInt((local.Z - 0.5f) / ChunkSize);
+		int maxZ = Mathf.FloorToInt((local.Z + 0.5f) / ChunkSize);
+		int minY = Mathf.FloorToInt((local.Y - 1.0f) / ChunkSize);
+		int maxY = Mathf.FloorToInt((local.Y + 2.0f) / ChunkSize);
+
+		if (minX < 0 || maxX >= SizeX / ChunkSize ||
+			minZ < 0 || maxZ >= SizeZ / ChunkSize ||
+			local.Y < 0 || local.Y >= SizeY)
+			return false;
+
+		minY = Mathf.Clamp(minY, 0, SizeY / ChunkSize - 1);
+		maxY = Mathf.Clamp(maxY, 0, SizeY / ChunkSize - 1);
+
+		for (int x = minX; x <= maxX; x++)
+		for (int y = minY; y <= maxY; y++)
+		for (int z = minZ; z <= maxZ; z++)
+		{
+			if (!_chunks.TryGetValue(new Vector3I(x, y, z), out var chunk)
+				|| !chunk.Built)
+				return false;
+		}
+
+		return true;
+	}
+
+	// =========================================================
+	// Supply loaded terrain geometry to the navigation baker.
+	public IEnumerable<MeshInstance3D> GetLoadedVisuals()
+	{
+		foreach (TerrainChunk chunk in _chunks.Values)
+			if (chunk.Built && chunk.Visual.Mesh != null)
+				yield return chunk.Visual;
+	}
+
+	#endregion
 
 	#region Generation
 
@@ -103,45 +250,12 @@ public partial class SandboxTerrain : Node3D
 		}
 	}
 
-	// =========================================================
-	// Each chunk has one visual mesh and one static collision body.
+		// =========================================================
+	// Group streamed terrain chunks beneath a single helper node.
 	private void CreateChunks()
 	{
-		for (int x = 0; x < SizeX / ChunkSize; x++)
-		for (int y = 0; y < SizeY / ChunkSize; y++)
-		for (int z = 0; z < SizeZ / ChunkSize; z++)
-		{
-			var key = new Vector3I(x, y, z);
-			var root = new Node3D { Name = $"Chunk_{x}_{y}_{z}" };
-			AddChild(root);
-
-			var visual = new MeshInstance3D
-			{
-				Name = "Visual",
-				MaterialOverride = _material
-			};
-			root.AddChild(visual);
-
-			var body = new StaticBody3D
-			{
-				Name = "Body",
-				CollisionLayer = 1,
-				CollisionMask = 0
-			};
-			root.AddChild(body);
-			body.AddToGroup("mineable_terrain");
-
-			var collision = new CollisionShape3D { Name = "Collision" };
-			body.AddChild(collision);
-
-			_chunks.Add(key, new TerrainChunk
-			{
-				Visual = visual,
-				Collision = collision
-			});
-
-			RebuildChunk(key);
-		}
+		_chunkRoot = new Node3D { Name = "Chunks" };
+		AddChild(_chunkRoot);
 	}
 
 	#endregion
@@ -408,17 +522,23 @@ public partial class SandboxTerrain : Node3D
 		}
 	}
 
-	// =========================================================
-	// Spread mesh rebuilding across frames.
+		// =========================================================
+	// Build one section per frame and ignore obsolete unload requests.
 	public override void _Process(double delta)
 	{
-		const int rebuildsPerFrame = 2;
-
-		for (int i = 0; i < rebuildsPerFrame && _dirty.Count > 0; i++)
+		while (_dirty.Count > 0)
 		{
 			Vector3I key = _dirty.Dequeue();
-			_queued.Remove(key);
+
+			if (!_queued.Contains(key) ||
+				!_chunks.TryGetValue(key, out TerrainChunk chunk))
+				continue;
+
 			RebuildChunk(key);
+			chunk.Built = true;
+			_queued.Remove(key);
+			Revision++;
+			break;
 		}
 	}
 
