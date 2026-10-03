@@ -1,10 +1,16 @@
 using Godot;
 
-// Test level: editable terrain, lighting, player spawn, and crosshair.
+// Creates the sandbox terrain, lighting, player spawn, and test HUD.
 public partial class SandboxLevel : Node3D
 {
+	#region Settings and Fields
+
 	[Export] public TerrainSettings WorldSettings = new();
 	private SandboxTerrain _terrain;
+
+	#endregion
+
+	#region Initialisation
 
 	// =========================================================
 	// Create the terrain and spawn the player facing the cave entrance.
@@ -21,7 +27,6 @@ public partial class SandboxLevel : Node3D
 		AddChild(_terrain);
 
 		var player = GetNode<SandboxPlayer>("SandboxPlayer");
-
 		player.Position = new Vector3(
 			0, _terrain.GetSurfaceHeight(0, 8) + 0.2f, 8);
 
@@ -31,12 +36,14 @@ public partial class SandboxLevel : Node3D
 
 		CreateCameraLight(player);
 		CreateHud();
-	}	CreateCameraLight(player);
-		CreateHud();
 	}
 
+	#endregion
+
+	#region Lighting
+
 	// =========================================================
-	// Simple daylight for the initial terrain test.
+	// Create daylight and ambient illumination.
 	private void CreateEnvironment()
 	{
 		AddChild(new WorldEnvironment
@@ -62,11 +69,10 @@ public partial class SandboxLevel : Node3D
 	}
 
 	// =========================================================
-	// Temporary personal light so freshly excavated tunnels are visible.
+	// Attach a temporary exploration light to the player camera.
 	private void CreateCameraLight(SandboxPlayer player)
 	{
 		var camera = player.GetNode<Camera3D>("Camera");
-
 		camera.AddChild(new OmniLight3D
 		{
 			Name = "TestLight",
@@ -78,8 +84,12 @@ public partial class SandboxLevel : Node3D
 		});
 	}
 
+	#endregion
+
+	#region HUD
+
 	// =========================================================
-	// Crosshair and compact test controls.
+	// Display the crosshair and sandbox controls.
 	private void CreateHud()
 	{
 		var hud = new CanvasLayer { Name = "HUD" };
@@ -109,4 +119,6 @@ public partial class SandboxLevel : Node3D
 			MouseFilter = Control.MouseFilterEnum.Ignore
 		});
 	}
+
+	#endregion
 }
