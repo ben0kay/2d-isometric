@@ -1,12 +1,10 @@
 [gd_scene format=3 uid="uid://cco3ywkeoue1j"]
 
 [ext_resource type="PackedScene" uid="uid://yiw5ik0bwdj8" path="res://SandboxPlayer.tscn" id="1_puacc"]
-[ext_resource type="Script" uid="uid://qggrs3wkck2c" path="res://SandboxLevel.cs" id="1_ucs4u"]
-[ext_resource type="Script" uid="uid://dckxxfw4y27sm" path="res://PLAYER/SandboxPlayer.cs" id="3_hdfei"]
+[ext_resource type="Script" uid="uid://qggrs3wkck2c" path="res://WORLD/SandboxLevel.cs" id="1_ucs4u"]
 
 [node name="SandboxLevel" type="Node3D" unique_id=781625299]
 script = ExtResource("1_ucs4u")
 
 [node name="SandboxPlayer" parent="." unique_id=1584135942 instance=ExtResource("1_puacc")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
-script = ExtResource("3_hdfei")
