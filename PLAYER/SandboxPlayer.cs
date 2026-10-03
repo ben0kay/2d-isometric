@@ -13,6 +13,9 @@ public partial class SandboxPlayer : CharacterBody3D
 	[Export] public bool InvertY = true;
 	[Export] public bool InvertX = false;
 	[Export] public float CameraFov = 80.0f;
+	
+		[Export] public float FallResetY = -40.0f;
+	public Vector3 RespawnPosition = new(0, 2, 8);
 
 	private Camera3D _camera;
 	private float _pitch;
@@ -163,6 +166,8 @@ public partial class SandboxPlayer : CharacterBody3D
 		}
 	}
 
+	// =========================================================
+	// Arrow-key movement, right-mouse jump, gravity, and fall recovery.
 	public override void _PhysicsProcess(double delta)
 	{
 		float dt = (float)delta;
@@ -179,7 +184,6 @@ public partial class SandboxPlayer : CharacterBody3D
 
 		movement = movement.LimitLength();
 
-		// Movement follows horizontal player facing, not camera pitch.
 		Vector3 direction = Transform.Basis
 			* new Vector3(movement.X, 0, movement.Y);
 
@@ -198,10 +202,9 @@ public partial class SandboxPlayer : CharacterBody3D
 		Velocity = velocity;
 		MoveAndSlide();
 
-		// Recovery if you walk off the test floor.
-		if (GlobalPosition.Y < -20)
+		if (GlobalPosition.Y < FallResetY)
 		{
-			GlobalPosition = new Vector3(0, 2, 0);
+			GlobalPosition = RespawnPosition + Vector3.Up * 0.2f;
 			Velocity = Vector3.Zero;
 		}
 	}

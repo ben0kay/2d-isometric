@@ -3,27 +3,35 @@ using Godot;
 // Test level: editable terrain, lighting, player spawn, and crosshair.
 public partial class SandboxLevel : Node3D
 {
+	[Export] public TerrainSettings WorldSettings = new();
 	private SandboxTerrain _terrain;
 
 	// =========================================================
-	// Build the test world and position the existing player instance.
+	// Create the terrain and spawn the player facing the cave entrance.
 	public override void _Ready()
 	{
 		CreateEnvironment();
 
-		_terrain = new SandboxTerrain { Name = "Terrain" };
+		WorldSettings ??= new TerrainSettings();
+		_terrain = new SandboxTerrain
+		{
+			Name = "Terrain",
+			Settings = WorldSettings
+		};
 		AddChild(_terrain);
 
 		var player = GetNode<SandboxPlayer>("SandboxPlayer");
-		const float spawnX = 0;
-		const float spawnZ = 8;
 
 		player.Position = new Vector3(
-			spawnX,
-			_terrain.GetSurfaceHeight(spawnX, spawnZ) + 0.2f,
-			spawnZ);
+			0, _terrain.GetSurfaceHeight(0, 8) + 0.2f, 8);
+
+		player.RespawnPosition = player.GlobalPosition;
+		player.FallResetY = -40.0f;
+		player.Velocity = Vector3.Zero;
 
 		CreateCameraLight(player);
+		CreateHud();
+	}	CreateCameraLight(player);
 		CreateHud();
 	}
 

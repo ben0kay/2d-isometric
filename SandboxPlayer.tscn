@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://yiw5ik0bwdj8"]
-
-[ext_resource type="Script" uid="uid://dckxxfw4y27sm" path="res://PLAYER/SandboxPlayer.cs" id="1_a771m"]
-
-[node name="SandboxPlayer" type="CharacterBody3D" unique_id=1731991485]
-script = ExtResource("1_a771m")

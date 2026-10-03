@@ -5,17 +5,17 @@ using System.Collections.Generic;
 // Negative density = solid; positive density = air.
 public partial class SandboxTerrain : Node3D
 {
-	[Export] public int Seed = 12345;
+	[Export] public TerrainSettings Settings = new();
 	[Export] public float MiningRadius = 1.35f;
 	[Export] public float MiningInterval = 0.25f;
 	[Export] public float MiningReach = 5.0f;
 
 	private const int ChunkSize = 8;
-	private const int SizeX = 32;
-	private const int SizeY = 24;
-	private const int SizeZ = 32;
+	private const int SizeX = 48;
+	private const int SizeY = 40;
+	private const int SizeZ = 48;
 
-	private readonly Vector3 _origin = new(-16, -12, -16);
+	private readonly Vector3 _origin = new(-24, -28, -24);
 	private readonly float[,,] _density =
 		new float[SizeX + 1, SizeY + 1, SizeZ + 1];
 
@@ -23,7 +23,7 @@ public partial class SandboxTerrain : Node3D
 	private readonly Queue<Vector3I> _dirty = new();
 	private readonly HashSet<Vector3I> _queued = new();
 
-	private FastNoiseLite _noise;
+	private WorldGenerator _generator;
 	private StandardMaterial3D _material;
 	private float _miningTimer;
 
@@ -55,15 +55,11 @@ public partial class SandboxTerrain : Node3D
 	#region Generation
 
 	// =========================================================
-	// Create the shared terrain data and initial chunk meshes.
+	// Initialise the generator, shared density data, and chunk meshes.
 	public override void _Ready()
 	{
-		_noise = new FastNoiseLite
-		{
-			Seed = Seed,
-			Frequency = 0.09f,
-			NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth
-		};
+		Settings ??= new TerrainSettings();
+		_generator = new WorldGenerator(Settings);
 
 		_material = new StandardMaterial3D
 		{
@@ -76,20 +72,14 @@ public partial class SandboxTerrain : Node3D
 	}
 
 	// =========================================================
-	// Surface height: small noise variations plus two test hills.
+	// Expose original surface height for spawning and terrain colouring.
 	public float GetSurfaceHeight(float x, float z)
 	{
-		float hillA = 5.5f * Mathf.Exp(
-			-((x - 3) * (x - 3) + (z + 8) * (z + 8)) / 30.0f);
-
-		float hillB = 2.5f * Mathf.Exp(
-			-((x + 8) * (x + 8) + (z + 2) * (z + 2)) / 22.0f);
-
-		return 0.4f + _noise.GetNoise2D(x, z) * 0.6f + hillA + hillB;
+		return _generator.GetSurfaceHeight(x, z);
 	}
 
 	// =========================================================
-	// Fill the volume. Boundary planes close its sides and bottom.
+	// Sample the generated world and close the volume at its boundaries.
 	private void GenerateDensity()
 	{
 		for (int x = 0; x <= SizeX; x++)
@@ -99,7 +89,8 @@ public partial class SandboxTerrain : Node3D
 
 			for (int y = 0; y <= SizeY; y++)
 			{
-				float surface = _origin.Y + y - height;
+				Vector3 point = _origin + new Vector3(x, y, z);
+				float terrain = _generator.SampleDensity(point, height);
 
 				float boundary = Mathf.Max(
 					Mathf.Max(0.25f - x, x - (SizeX - 0.25f)),
@@ -107,7 +98,7 @@ public partial class SandboxTerrain : Node3D
 						Mathf.Max(0.25f - z, z - (SizeZ - 0.25f)),
 						0.25f - y));
 
-				_density[x, y, z] = Mathf.Max(surface, boundary);
+				_density[x, y, z] = Mathf.Max(terrain, boundary);
 			}
 		}
 	}
